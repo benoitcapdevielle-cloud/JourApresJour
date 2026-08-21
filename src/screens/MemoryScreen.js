@@ -9,7 +9,7 @@ const FIELDS = [
   { key: 'helpfulStrategies', label: 'Ce qui m’aide', placeholder: 'Une stratégie par ligne' },
   { key: 'personalNotes', label: 'Autres choses que je veux que Jour après Jour retienne', placeholder: 'Une information par ligne' },
 ];
-const toForm = (memories) => ({ firstName: memories.firstName || '', ...Object.fromEntries(FIELDS.map(({ key }) => [key, (memories[key] || []).join('\n')])) });
+const toForm = (memories = {}) => ({ firstName: memories?.firstName || '', ...Object.fromEntries(FIELDS.map(({ key }) => [key, (Array.isArray(memories?.[key]) ? memories[key] : []).join('\n')])) });
 const toMemories = (form) => ({ firstName: form.firstName, ...Object.fromEntries(FIELDS.map(({ key }) => [key, form[key].split('\n')])) });
 export default function MemoryScreen({ memories, onSave, onClear, onBack }) {
   const [form, setForm] = useState(() => toForm(memories)); const [saved, setSaved] = useState(false);

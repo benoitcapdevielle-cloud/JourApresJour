@@ -1,5 +1,6 @@
 import { getEventTargets } from './eventUtils';
 
+export const MIN_EVENTS_FOR_TRENDS = 3;
 const DAY_MS = 86400000;
 const validDate = (event) => { const date = new Date(event?.date); return Number.isNaN(date.getTime()) ? null : date; };
 const since = (events, days, now) => { const end = new Date(now); const start = new Date(end.getTime() - days * DAY_MS); return events.filter((event) => { const date = validDate(event); return date && date > start && date <= end; }); };

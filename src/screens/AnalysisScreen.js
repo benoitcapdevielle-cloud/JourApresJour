@@ -1,10 +1,9 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { buildBehaviorSummary } from '../utils/behaviorAnalysis';
-const MIN_EVENTS = 3;
+import { buildBehaviorSummary, MIN_EVENTS_FOR_TRENDS } from '../utils/behaviorAnalysis';
 function Insight({ title, text }) { return <View style={styles.card}><Text style={styles.cardTitle}>{title}</Text><Text style={styles.text}>{text}</Text></View>; }
 export default function AnalysisScreen({ events, onBack }) {
-  const summary = buildBehaviorSummary(events); const enoughConsumption = summary.consumptionEventCount >= MIN_EVENTS; const enoughResisted = summary.resistedEventCount >= MIN_EVENTS;
+  const summary = buildBehaviorSummary(events); const enoughConsumption = summary.consumptionEventCount >= MIN_EVENTS_FOR_TRENDS; const enoughResisted = summary.resistedEventCount >= MIN_EVENTS_FOR_TRENDS;
   return <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
     <Pressable onPress={onBack}><Text style={styles.back}>← Retour</Text></Pressable><Text style={styles.title}>Analyses</Text>
     <Text style={styles.intro}>Ces tendances sont calculées uniquement à partir de tes entrées enregistrées sur ce téléphone. Elles décrivent ce qui revient souvent, sans établir de cause.</Text>

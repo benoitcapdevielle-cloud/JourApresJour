@@ -9,7 +9,7 @@ export function buildAIContext({ events = [], profile = {}, memories = {} } = {}
     personalContext: {
       firstName: typeof memories?.firstName === 'string' ? memories.firstName.trim() : '',
       motivations: safeList(memories?.motivations), importantPeople: safeList(memories?.importantPeople),
-      riskSituations: safeList(memories?.riskSituations), helpfulStrategies: safeList(memories?.helpfulStrategies),
+      riskSituations: safeList(memories?.riskSituations), helpfulStrategies: safeList(memories?.helpfulStrategies), personalNotes: safeList(memories?.personalNotes),
     },
   };
   return context;
