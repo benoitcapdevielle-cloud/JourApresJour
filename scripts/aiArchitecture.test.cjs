@@ -22,7 +22,7 @@ const extraction = require('../src/ai/eventExtraction');
 const { normalizeEvent } = require('../src/utils/eventUtils');
 
 const target = (category, type, measurement = {}) => ({ category, type, measurement });
-const detected = (targets, extra = {}) => ({ detected: true, confidence: 0.92, eventType: 'consumption', targets, craving: null, emotion: null, context: null, triggers: [], strategies: [], occurredAt: null, missingFields: [], ...extra });
+const detected = (targets, extra = {}) => ({ detected: true, autoSaveEligible: false, confidence: 0.92, eventType: 'consumption', targets, craving: null, emotion: null, context: null, triggers: [], strategies: [], occurredAt: '2026-08-21T17:36:00.000Z', occurredAtPrecision: 'exact', missingFields: [], ambiguity: [], ...extra });
 
 (async () => {
   assert.equal(typeof aiServiceModule.aiService.sendMessage, 'function');
@@ -37,10 +37,12 @@ const detected = (targets, extra = {}) => ({ detected: true, confidence: 0.92, e
     await assert.rejects(provider.generate({ messages: [], context: {}, taskType: 'conversation' }), { code: 'AI_PROVIDER_NOT_CONFIGURED' });
   }
   let backendRequest;
-  const backendProvider = createBackendProvider({ endpoint: 'http://backend.test/api/chat', fetchImpl: async (url, options) => { backendRequest = { url, options }; return { ok: true, json: async () => ({ reply: ' Réponse locale ' }) }; } });
-  assert.equal(await backendProvider.generate({ messages: [{ role: 'user', text: 'Bonjour' }], context: { goal: 'reduce' } }), 'Réponse locale');
-  assert.deepEqual(JSON.parse(backendRequest.options.body), { message: 'Bonjour', context: { goal: 'reduce' } });
-  assert.deepEqual(Object.keys(JSON.parse(backendRequest.options.body)).sort(), ['context', 'message']);
+  const backendSuggestion = detected([target('substance', 'Alcool', { quantity: 3, unit: 'verre(s)' })]);
+  const backendProvider = createBackendProvider({ endpoint: 'http://backend.test/api/chat', fetchImpl: async (url, options) => { backendRequest = { url, options }; return { ok: true, json: async () => ({ reply: ' Réponse locale ', eventSuggestion: backendSuggestion }) }; } });
+  const backendResult = await backendProvider.generate({ messages: [{ role: 'user', text: 'Bonjour' }], context: { goal: 'reduce' } });
+  assert.equal(backendResult.reply, 'Réponse locale'); assert.equal(backendResult.eventSuggestion.targets[0].measurement.source, 'conversation');
+  assert.deepEqual(JSON.parse(backendRequest.options.body), { message: 'Bonjour', context: { goal: 'reduce' }, recentMessages: [], pendingConversationEvent: null, activeRecentEvent: null, activeSafetyContext: null, recentEventCandidates: [] });
+  assert.deepEqual(Object.keys(JSON.parse(backendRequest.options.body)).sort(), ['activeRecentEvent', 'activeSafetyContext', 'context', 'message', 'pendingConversationEvent', 'recentEventCandidates', 'recentMessages']);
   await assert.rejects(createBackendProvider({ fetchImpl: async () => { throw new Error('offline'); } }).generate({ messages: [{ role: 'user', text: 'Test' }], context: {} }), { code: 'BACKEND_UNAVAILABLE' });
   await assert.rejects(createBackendProvider({ fetchImpl: async () => ({ ok: false, status: 503 }) }).generate({ messages: [{ role: 'user', text: 'Test' }], context: {} }), { code: 'BACKEND_NOT_CONFIGURED' });
   await assert.rejects(createBackendProvider({ fetchImpl: async () => ({ ok: true, json: async () => ({ reply: ' ' }) }) }).generate({ messages: [{ role: 'user', text: 'Test' }], context: {} }), { code: 'EMPTY_REPLY' });
@@ -60,10 +62,31 @@ const detected = (targets, extra = {}) => ({ detected: true, confidence: 0.92, e
   assert.equal(multi.targets.length, 2); assert.ok(multi.targets.every(({ measurement }) => measurement.source === 'conversation'));
   const pending = extraction.createPendingEventSuggestion(detected([target('behavior', 'Jeux vidéo', { durationMinutes: 120 })]));
   assert.equal(pending.status, 'pending'); assert.equal(pending.requiresConfirmation, true); assert.equal(pending.trackerEvent.targets[0].measurement.source, 'conversation');
-  assert.equal(extraction.DEFAULT_CONVERSATION_TRACKING_MODE, 'confirm');
+  assert.equal(extraction.DEFAULT_CONVERSATION_TRACKING_MODE, 'automatic');
+  assert.equal(extraction.isConfirmableEventSuggestion(alcohol), true);
+  assert.equal(extraction.isAutoTrackableEventSuggestion(detected([target('substance', 'Cannabis', { quantity: 2, unit: 'joint(s)' })], { autoSaveEligible: true, confidence: 0.96 })), true);
+  assert.equal(extraction.isAutoTrackableEventSuggestion(detected([target('substance', 'Cannabis')], { autoSaveEligible: true, confidence: 0.96, ambiguity: ['Quantité incertaine'] })), false);
+  const obviousAlcohol = detected([target('substance', 'Alcool', { quantity: 3, unit: 'verre(s)' })], { autoSaveEligible: false, confidence: 0.96 });
+  assert.deepEqual(extraction.getAutoSaveDecision(obviousAlcohol, "Je viens de boire 3 verres je rentre du taff."), { eligible: true, reasons: [] });
+  assert.equal(extraction.getAutoSaveDecision(obviousAlcohol, 'Je vais boire ce soir.').eligible, false);
+  assert.equal(extraction.getAutoSaveDecision(obviousAlcohol, "Mon pote a bu 3 verres.").eligible, false);
+  assert.equal(extraction.isConfirmableEventSuggestion(detected([target('substance', 'Cannabis')], { ambiguity: ['Quantité incertaine'], missingFields: ['quantity'] })), false);
   assert.equal(extraction.normalizeEventExtraction(null), null);
   assert.equal(extraction.normalizeEventExtraction({ detected: true, confidence: 2, eventType: 'unknown', targets: [] }), null);
   assert.equal(extraction.createPendingEventSuggestion({ detected: false, confidence: 1, targets: [] }), null);
+  const partial = extraction.normalizeEventExtraction(detected([target('substance', 'Cannabis', { quantity: 2, unit: 'joint(s)' })], { emotion: null, context: 'Après le travail' }));
+  const anger = extraction.normalizeEventExtraction(detected([], { emotion: 'Colère', occurredAt: null, occurredAtPrecision: null }));
+  const mergedAnger = extraction.mergePendingConversationEvent(partial, anger);
+  assert.equal(mergedAnger.targets[0].type, 'Cannabis'); assert.equal(mergedAnger.emotion, 'Colère'); assert.equal(mergedAnger.context, 'Après le travail');
+  const corrected = extraction.mergePendingConversationEvent(mergedAnger, detected([target('substance', 'Cannabis', { quantity: 3, unit: 'joint(s)' })], { emotion: 'Stress' }));
+  assert.equal(corrected.targets[0].measurement.quantity, 3); assert.equal(corrected.emotion, 'Stress');
+  const enrichment = extraction.normalizeEventEnrichment({ detected: true, eventId: 'conversation-event', confidence: 0.95, updates: { craving: 8, emotion: 'Colère', triggers: ['Problèmes de planning'] }, ambiguity: [] }, 'conversation-event');
+  assert.equal(extraction.isApplicableEventEnrichment(enrichment, 'conversation-event'), true); assert.equal(enrichment.updates.craving, 8);
+  assert.equal(extraction.normalizeEventEnrichment(enrichment, 'other-event'), null);
+  const deviceNow = new Date('2026-08-21T17:20:00.000Z');
+  const modelFutureTime = detected([target('substance', 'Cannabis', { quantity: 2, unit: 'joint(s)' })], { occurredAt: '2026-08-21T21:20:00.000Z', occurredAtPrecision: 'exact' });
+  assert.equal(extraction.alignConversationEventToDeviceTime(modelFutureTime, "J'ai fumé 2 joints.", deviceNow).occurredAt, deviceNow.toISOString());
+  assert.equal(extraction.alignConversationEventToDeviceTime(modelFutureTime, "Hier soir j'ai fumé 2 joints.", deviceNow).occurredAt, '2026-08-21T21:20:00.000Z');
   const normalizedTrackerEvent = normalizeEvent({ id: 'conversation-event', eventType: 'consumption', targets: pending.trackerEvent.targets });
   assert.equal(normalizedTrackerEvent.targets[0].measurement.source, 'conversation');
 

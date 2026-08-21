@@ -21,7 +21,7 @@ const cleanMessages = (messages) => Array.isArray(messages) ? messages.filter((i
 
 export function createAIService({ routeResolver = resolveModelRoute, providers = DEFAULT_PROVIDER_REGISTRY, scientificRetriever = retrieveScientificContext } = {}) {
   return Object.freeze({
-    async sendMessage({ message, context = {}, messages = [], taskType = AI_TASK_TYPES.CONVERSATION, tags = [] } = {}) {
+    async sendMessage({ message, context = {}, messages = [], pendingConversationEvent = null, activeRecentEvent = null, recentEventCandidates = [], activeSafetyContext = null, taskType = AI_TASK_TYPES.CONVERSATION, tags = [] } = {}) {
       const cleanMessage = typeof message === 'string' ? message.trim() : '';
       if (!cleanMessage) throw new TypeError('A non-empty message is required.');
       const route = routeResolver(taskType);
@@ -29,7 +29,7 @@ export function createAIService({ routeResolver = resolveModelRoute, providers =
       const provider = providers?.[route.providerId];
       if (!provider || typeof provider.generate !== 'function') throw new AIServiceNotConfiguredError(taskType);
       const scientificContext = route.useScientificContext ? await scientificRetriever({ query: cleanMessage, tags, limit: 5 }) : [];
-      return provider.generate({ messages: [...cleanMessages(messages), { role: 'user', text: cleanMessage }], context, taskType, modelId: route.modelId, scientificContext, safetyRules: COMPANION_SAFETY_RULES });
+      return provider.generate({ messages: [...cleanMessages(messages).slice(-8), { role: 'user', text: cleanMessage }], context, pendingConversationEvent, activeRecentEvent, recentEventCandidates, activeSafetyContext, taskType, modelId: route.modelId, scientificContext, safetyRules: COMPANION_SAFETY_RULES });
     },
   });
 }

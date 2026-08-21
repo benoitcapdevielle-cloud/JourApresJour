@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createServer } = require('../server');
 const { createBackendAiService } = require('../src/ai/backendAiService');
-const { createOpenAIProvider, DEFAULT_OPENAI_MODEL } = require('../src/ai/providers/openaiProvider');
+const { createOpenAIProvider, DEFAULT_OPENAI_MODEL, preventFalseTrackingConfirmation, SYSTEM_PROMPT, PSYCHOLOGICAL_SUPPORT_PROMPT } = require('../src/ai/providers/openaiProvider');
+const { buildEmergencyInstructions, getEmergencyResources } = require('../src/safety/emergencyResources');
+const { buildSafetyDetectedEvent, evaluateSafety } = require('../src/safety/safetyService');
 const projectRoot = path.resolve(__dirname, '..', '..');
 
 const withServer = async (aiService, test) => {
@@ -14,10 +16,60 @@ const withServer = async (aiService, test) => {
 
 (async () => {
   assert.equal(DEFAULT_OPENAI_MODEL, 'gpt-5.4-mini');
+  assert.deepEqual(getEmergencyResources('fr'), { countryCode: 'FR', countryName: 'France', medicalEmergency: '15', generalEmergency: '112', accessibleEmergency: '114', sourceUrl: 'https://www.service-public.gouv.fr/particuliers/vosdroits/F33954' });
+  assert.equal(getEmergencyResources('XX'), null);
+  assert.match(buildEmergencyInstructions(null), /N'invente jamais de numéro/);
+  const safetyNow = new Date('2026-08-21T20:00:00.000Z');
+  const firstSafety = evaluateSafety({ message: 'Je viens de prendre 14 taz.', now: safetyNow });
+  assert.equal(firstSafety.level, 'emergency'); assert.equal(firstSafety.mustFollowUp, true); assert.equal(firstSafety.active, true);
+  assert.equal(buildSafetyDetectedEvent('Je viens de prendre 14 taz.', safetyNow).targets[0].measurement.quantity, 14);
+  const safetyProvider = { generate: async () => ({ reply: 'D’accord.', eventSuggestion: null, eventEnrichment: null }) };
+  const safetyService = createBackendAiService({ provider: safetyProvider, now: () => safetyNow });
+  const firstEmergencyReply = await safetyService.sendMessage({ message: 'Je viens de prendre 14 taz.', context: {} });
+  assert.equal(firstEmergencyReply.reply, '14 taz, c’est une quantité qui peut représenter une urgence médicale. Appelle le 15 ou le 112 maintenant. Tu es seul ?');
+  assert.equal(firstEmergencyReply.safety.mustFollowUp, true); assert.equal(firstEmergencyReply.eventSuggestion, null); assert.equal(firstEmergencyReply.detectedConversationEvent.targets[0].type, 'MDMA');
+  const stillEmergency = await safetyService.sendMessage({ message: 'Je vais bien.', context: {}, activeSafetyContext: firstEmergencyReply.safety });
+  assert.equal(stillEmergency.safety.level, 'emergency'); assert.match(stillEmergency.reply, /Même si tu te sens bien/); assert.match(stillEmergency.reply, /Tu es seul \?/);
+  const aloneEmergency = await safetyService.sendMessage({ message: 'Je suis seul.', context: {}, activeSafetyContext: stillEmergency.safety });
+  assert.equal(aloneEmergency.safety.mustFollowUp, true); assert.match(aloneEmergency.reply, /Peux-tu lancer l’appel tout de suite \?/);
+  const helpCalled = await safetyService.sendMessage({ message: 'J’ai appelé le 15.', context: {}, activeSafetyContext: aloneEmergency.safety });
+  assert.equal(helpCalled.safety.active, false); assert.equal(helpCalled.safety.exitReason, 'emergency_services_contacted'); assert.match(helpCalled.reply, /Suis leurs instructions/);
+  const unavailableSafetyService = createBackendAiService({ provider: { generate: async () => { throw new Error('provider down'); } }, now: () => safetyNow });
+  const providerIndependentSafety = await unavailableSafetyService.sendMessage({ message: 'Je viens de prendre 14 taz.', context: {} });
+  assert.equal(providerIndependentSafety.safety.level, 'emergency'); assert.match(providerIndependentSafety.reply, /Appelle le 15 ou le 112 maintenant/);
   let providerRequest;
-  const provider = createOpenAIProvider({ apiKey: 'test-placeholder', fetchImpl: async (url, options) => { providerRequest = { url, options }; return { ok: true, status: 200, headers: { get: () => 'req_test' }, json: async () => ({ output: [{ content: [{ type: 'output_text', text: 'Réponse test' }] }] }) }; } });
-  assert.equal(await provider.generate({ message: 'Réponds en français : ça fonctionne ?', context: { goal: 'reduce' } }), 'Réponse test');
+  const structuredOutput = { reply: 'Réponse **test**', detected: true, autoSaveEligible: true, confidence: 0.95, eventType: 'consumption', targets: [{ category: 'substance', type: 'Alcool', measurement: { quantity: 3, unit: 'verre(s)', durationMinutes: null, episodes: null, moneySpent: null, source: 'conversation' } }], craving: null, emotion: null, context: null, triggers: [], strategies: [], occurredAt: '2026-08-21T17:36:00.000Z', occurredAtPrecision: 'exact', missingFields: [], ambiguity: [], eventEnrichment: { detected: true, eventId: 'event-1', confidence: 0.95, updates: { craving: 8 }, ambiguity: [] } };
+  const provider = createOpenAIProvider({ apiKey: 'test-placeholder', now: () => new Date('2026-08-21T17:36:00.000Z'), fetchImpl: async (url, options) => { providerRequest = { url, options }; return { ok: true, status: 200, headers: { get: () => 'req_test' }, json: async () => ({ output: [{ content: [{ type: 'output_text', text: JSON.stringify(structuredOutput) }] }] }) }; } });
+  const generated = await provider.generate({ message: 'Réponds en français : ça fonctionne ?', context: { goal: 'reduce' }, recentMessages: [{ role: 'assistant', text: 'Que ressens-tu ?' }], pendingConversationEvent: structuredOutput, activeRecentEvent: { id: 'event-1', eventType: 'consumption' }, recentEventCandidates: [{ id: 'event-2', eventType: 'consumption' }] });
+  assert.equal(generated.reply, 'Réponse test');
+  assert.equal(generated.eventSuggestion, null);
+  assert.equal(generated.eventEnrichment.eventId, 'event-1'); assert.equal(generated.eventEnrichment.updates.craving, 8);
+  const creationOutput = { ...structuredOutput, eventEnrichment: { detected: false, eventId: null, confidence: 0, updates: {}, ambiguity: [] } };
+  const creationProvider = createOpenAIProvider({ apiKey: 'test-placeholder', fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => 'req_create' }, json: async () => ({ output: [{ content: [{ type: 'output_text', text: JSON.stringify(creationOutput) }] }] }) }) });
+  const creationResult = await creationProvider.generate({ message: 'Je viens de boire 3 verres.', context: {} });
+  assert.equal(creationResult.eventSuggestion.targets[0].measurement.quantity, 3); assert.equal(creationResult.eventEnrichment, null);
   const providerBody = JSON.parse(providerRequest.options.body); assert.equal(providerBody.store, false); assert.equal(providerBody.model, 'gpt-5.4-mini'); assert.equal(typeof providerBody.input, 'string'); assert.match(providerBody.input, /Réponds en français : ça fonctionne \?/);
+  assert.match(providerBody.input, /Que ressens-tu/); assert.match(providerBody.input, /Événement conversationnel en cours/); assert.match(providerBody.input, /event-1/); assert.match(providerBody.input, /event-2/);
+  assert.match(providerBody.instructions, /ne justifie aucune question sur l'alcool/);
+  assert.match(providerBody.instructions, /une observation sans nouvelle question/);
+  assert.match(SYSTEM_PROMPT, /Fais passer la chaleur avant l'analyse/);
+  assert.match(SYSTEM_PROMPT, /philosophie Anti-Zero/);
+  assert.match(SYSTEM_PROMPT, /Je viens de boire 3 verres je rentre du taf/);
+  assert.match(SYSTEM_PROMPT, /Mon boss m'a encore gonflé/);
+  assert.match(SYSTEM_PROMPT, /J'ai fumé 2 joints/);
+  assert.match(SYSTEM_PROMPT, /J'ai encore craqué/);
+  assert.match(SYSTEM_PROMPT, /Je suis juste fatigué/);
+  assert.match(SYSTEM_PROMPT, /sans chercher obligatoirement une cause ni poser une question/);
+  assert.match(PSYCHOLOGICAL_SUPPORT_PROMPT, /jamais un psychologue/);
+  assert.match(PSYCHOLOGICAL_SUPPORT_PROMPT, /grounding 5-4-3-2-1/);
+  assert.match(PSYCHOLOGICAL_SUPPORT_PROMPT, /Une association n'est jamais une cause certaine/);
+  assert.match(PSYCHOLOGICAL_SUPPORT_PROMPT, /la sécurité prime/);
+  assert.match(PSYCHOLOGICAL_SUPPORT_PROMPT, /Ne conseille jamais d'arrêter un traitement/);
+  assert.match(providerBody.instructions, /urgence médicale 15/);
+  assert.match(providerBody.instructions, /urgence générale 112/);
+  assert.match(providerBody.input, /liste complète/); assert.match(providerBody.input, /même épisode/);
+  assert.equal(providerBody.text.format.type, 'json_schema'); assert.equal(providerBody.text.format.strict, true);
+  assert.equal(preventFalseTrackingConfirmation('C’est noté dans ton suivi.'), 'Je peux te proposer de l’ajouter à ton suivi après ta confirmation.');
   await assert.rejects(createOpenAIProvider({ apiKey: '' }).generate({ message: 'Bonjour', context: {} }), { code: 'OPENAI_NOT_CONFIGURED', statusCode: 503 });
 
   const failedProvider = createOpenAIProvider({ apiKey: 'test-placeholder', fetchImpl: async () => ({
@@ -69,7 +121,7 @@ const withServer = async (aiService, test) => {
   const mobileSource = fs.readFileSync(path.join(projectRoot, 'src/ai/providers/openaiProvider.js'), 'utf8');
   assert.equal(/api\.openai\.com|OPENAI_API_KEY|Authorization/.test(mobileSource), false);
   const backendSource = fs.readFileSync(path.join(projectRoot, 'backend/src/ai/providers/openaiProvider.js'), 'utf8');
-  assert.equal(/store:\s*false/.test(backendSource), true); assert.equal(/file_search|retrieveScientificContext|eventExtraction/.test(backendSource), false);
+  assert.equal(/store:\s*false/.test(backendSource), true); assert.equal(/file_search|retrieveScientificContext/.test(backendSource), false);
   const gitignore = fs.readFileSync(path.join(projectRoot, '.gitignore'), 'utf8'); assert.equal(/^\.env$/m.test(gitignore), true);
   const backendPackage = JSON.parse(fs.readFileSync(path.join(projectRoot, 'backend/package.json'), 'utf8'));
   assert.match(backendPackage.scripts.start, /--use-system-ca/);
