@@ -3,6 +3,14 @@ const fs = require('node:fs');
 const Module = require('node:module');
 const babel = require('@babel/core');
 
+const originalExtension = Module._extensions['.js'];
+Module._extensions['.js'] = (loaded, filename) => {
+  if (!filename.includes('src')) return originalExtension(loaded, filename);
+  const source = fs.readFileSync(filename, 'utf8');
+  const code = babel.transformSync(source, { plugins: ['@babel/plugin-transform-modules-commonjs'] }).code;
+  loaded._compile(code, filename);
+};
+
 function loadModule(path) {
   const source = fs.readFileSync(path, 'utf8');
   const code = babel.transformSync(source, { plugins: ['@babel/plugin-transform-modules-commonjs'] }).code;

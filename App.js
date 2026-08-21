@@ -44,7 +44,7 @@ export default function App() {
       eventType: values.eventType,
       date: editingEvent?.date || now,
       updatedAt: now,
-      substances: values.selectedSubstances,
+      targets: values.selectedTargets,
       craving: Number(values.craving),
       emotion: values.emotion || null,
       context: values.context || null,
@@ -59,7 +59,9 @@ export default function App() {
       setEvents((current) => [...current, eventData]);
       setFlashMessage(values.eventType === 'craving_resisted'
         ? 'Tu as traversé cette envie sans consommer. Ce qui t’a aidé aujourd’hui pourra devenir une ressource pour les prochaines fois.'
-        : 'Cette consommation n’efface pas tes progrès. On continue, sans jugement.');
+        : values.selectedTargets.every(({ category }) => category === 'substance')
+          ? 'Cette consommation n’efface pas tes progrès. On continue, sans jugement.'
+          : 'Cet événement n’efface pas tes progrès. On continue, sans jugement.');
     }
     setEditingEvent(null);
     setScreen('home');
