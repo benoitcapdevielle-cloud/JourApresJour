@@ -4,7 +4,7 @@
   "private": true,
   "engines": { "node": ">=20" },
   "scripts": {
-    "start": "node --env-file=.env server.js",
+    "start": "node --use-system-ca --env-file=.env server.js",
     "test": "node test/backend.test.js"
   }
 }

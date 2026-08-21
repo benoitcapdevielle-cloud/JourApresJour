@@ -25,7 +25,26 @@ const readJsonBody = (request) => new Promise((resolve, reject) => {
   request.on('error', reject);
 });
 
-function createServer({ aiService = createBackendAiService(), allowedOrigin = process.env.ALLOWED_ORIGIN || '' } = {}) {
+const cleanLogValue = (value, fallback) => {
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  return value.replace(/[\r\n]+/g, ' ').replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]').slice(0, 500);
+};
+
+const logBackendError = (error, logger) => {
+  if (typeof logger?.error !== 'function') return;
+  const details = error?.providerDetails;
+  if (details) {
+    const status = Number.isInteger(details.status) ? details.status : 'network';
+    const code = cleanLogValue(details.code, error?.code || 'unknown');
+    const message = cleanLogValue(details.message, 'Provider request failed.');
+    const requestId = cleanLogValue(details.requestId, 'n/a');
+    logger.error(`OpenAI error: status=${status} code=${code} message=${JSON.stringify(message)} request_id=${requestId}`);
+    return;
+  }
+  logger.error(`Backend AI error: code=${cleanLogValue(error?.code, 'unknown')}`);
+};
+
+function createServer({ aiService = createBackendAiService(), allowedOrigin = process.env.ALLOWED_ORIGIN || '', logger = console } = {}) {
   const clients = new Map();
   const isRateLimited = (address) => {
     const now = Date.now(); const previous = clients.get(address);
@@ -47,6 +66,7 @@ function createServer({ aiService = createBackendAiService(), allowedOrigin = pr
       const result = await aiService.sendMessage(await readJsonBody(request));
       return sendJson(response, 200, result, corsOrigin);
     } catch (error) {
+      logBackendError(error, logger);
       const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
       const code = statusCode === 503 ? 'AI_NOT_CONFIGURED' : statusCode < 500 ? 'INVALID_REQUEST' : statusCode === 504 ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE';
       return sendJson(response, statusCode, { error: { code, message: statusCode < 500 ? 'Invalid request.' : 'The companion is unavailable.' } }, corsOrigin);
@@ -59,4 +79,4 @@ if (require.main === module) {
   createServer().listen(port, '0.0.0.0', () => console.log(`Jour après Jour backend listening on port ${port}`));
 }
 
-module.exports = { createServer };
+module.exports = { createServer, logBackendError };
