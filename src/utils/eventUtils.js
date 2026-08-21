@@ -7,7 +7,7 @@ export function normalizeTarget(target = {}) {
   return { category: safeTarget.category || 'behavior', type: safeTarget.type || safeTarget.name || 'Autre comportement', measurement: {
     ...(finiteOrNull(measurement.quantity) !== null ? { quantity: finiteOrNull(measurement.quantity) } : {}), ...(measurement.unit ? { unit: measurement.unit } : {}),
     ...(finiteOrNull(measurement.durationMinutes) !== null ? { durationMinutes: finiteOrNull(measurement.durationMinutes) } : {}), ...(finiteOrNull(measurement.episodes) !== null ? { episodes: finiteOrNull(measurement.episodes) } : {}),
-    ...(finiteOrNull(measurement.moneySpent) !== null ? { moneySpent: finiteOrNull(measurement.moneySpent) } : {}), source: measurement.source === 'device_usage' ? 'device_usage' : 'manual',
+    ...(finiteOrNull(measurement.moneySpent) !== null ? { moneySpent: finiteOrNull(measurement.moneySpent) } : {}), source: ['manual', 'device_usage', 'conversation'].includes(measurement.source) ? measurement.source : 'manual',
   } };
 }
 export function getEventTargets(event = {}) {
