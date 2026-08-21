@@ -1,0 +1,7 @@
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+
+export default function TalkScreen({ onBack }) {
+  return <ScrollView style={styles.screen} contentContainerStyle={styles.container}><Pressable onPress={onBack}><Text style={styles.back}>← Retour</Text></Pressable><Text style={styles.title}>Parler</Text><View style={styles.card}><Text style={styles.cardTitle}>Ton compagnon Jour après Jour</Text><Text style={styles.text}>Ici, tu pourras parler librement de ce que tu ressens, de tes envies, de tes consommations et de ce qui se répète dans ton parcours.</Text><Text style={styles.text}>Avec ton accord, l’IA pourra utiliser certaines informations de ton historique pour t’aider à mieux comprendre tes propres schémas.</Text><Text style={styles.privacy}>Pour l’instant, aucune donnée n’est envoyée à une IA.</Text></View><StatusBar style="auto" /></ScrollView>;
+}
+const styles=StyleSheet.create({screen:{flex:1,backgroundColor:'#E8F5E9'},container:{flexGrow:1,paddingHorizontal:22,paddingTop:60,paddingBottom:70},back:{color:'#2E7D32',fontSize:16,marginBottom:20,fontWeight:'600'},title:{fontSize:32,fontWeight:'bold',color:'#2E7D32',textAlign:'center',marginBottom:10},card:{backgroundColor:'#FFF',borderRadius:18,padding:22,borderWidth:1,borderColor:'#C8E6C9',marginTop:20},cardTitle:{fontSize:21,fontWeight:'bold',color:'#2E7D32',marginBottom:15},text:{color:'#444',lineHeight:23,marginBottom:14},privacy:{color:'#2E7D32',fontWeight:'600',marginTop:5}});
