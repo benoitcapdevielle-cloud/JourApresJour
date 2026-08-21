@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { buildAIContext } from '../ai/buildAIContext';
 import { addUserMessage, clearConversation, loadConversation } from '../services/conversationService';
@@ -18,6 +18,7 @@ export default function TalkScreen({ events, profile, memories, onManageMemory, 
   const [isSending, setIsSending] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [inputHeight, setInputHeight] = useState(MIN_INPUT_HEIGHT);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(() => Keyboard.isVisible());
   const sendingRef = useRef(false);
   const listRef = useRef(null);
   const context = useMemo(() => buildAIContext({ events, profile, memories }), [events, profile, memories]);
@@ -30,6 +31,13 @@ export default function TalkScreen({ events, profile, memories, onManageMemory, 
     let isActive = true;
     loadConversation().then((savedMessages) => { if (isActive) { setMessages(savedMessages); scrollToLatest(false); } }).catch(() => { if (isActive) setNotice('La conversation locale n’a pas pu être chargée.'); }).finally(() => { if (isActive) setIsLoading(false); });
     return () => { isActive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => setIsKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => setIsKeyboardVisible(false));
+    return () => { showSubscription.remove(); hideSubscription.remove(); };
   }, []);
 
   const send = async () => {
@@ -67,7 +75,7 @@ export default function TalkScreen({ events, profile, memories, onManageMemory, 
   };
 
   const cannotSend = !message.trim() || isSending;
-  return <KeyboardAvoidingView style={styles.screen} behavior="padding" enabled={Platform.OS === 'ios'} keyboardVerticalOffset={0}>
+  return <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} enabled={Platform.OS === 'ios' || isKeyboardVisible} keyboardVerticalOffset={0}>
     <View style={styles.layout}>
     <View style={styles.header}>
       <Pressable style={styles.headerAction} onPress={onBack}><Text style={styles.back}>← Retour</Text></Pressable>
