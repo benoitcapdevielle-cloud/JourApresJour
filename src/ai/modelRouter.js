@@ -6,7 +6,7 @@ export const AI_TASK_TYPES = Object.freeze({
 });
 
 export const DEFAULT_MODEL_ROUTES = Object.freeze({
-  [AI_TASK_TYPES.CONVERSATION]: Object.freeze({ capabilityTier: 'economy', providerId: null, modelId: null, useScientificContext: false }),
+  [AI_TASK_TYPES.CONVERSATION]: Object.freeze({ capabilityTier: 'economy', providerId: 'openai', modelId: 'backend-default', useScientificContext: false }),
   [AI_TASK_TYPES.EXTRACTION_EVENT]: Object.freeze({ capabilityTier: 'structured', providerId: null, modelId: null, useScientificContext: false }),
   [AI_TASK_TYPES.DEEP_ANALYSIS]: Object.freeze({ capabilityTier: 'advanced', providerId: null, modelId: null, useScientificContext: false }),
   [AI_TASK_TYPES.SCIENTIFIC_ANSWER]: Object.freeze({ capabilityTier: 'advanced', providerId: null, modelId: null, useScientificContext: true }),

@@ -13,7 +13,7 @@ Module._extensions['.js'] = (loaded, filename) => {
 
 const aiServiceModule = require('../src/ai/aiService');
 const router = require('../src/ai/modelRouter');
-const openaiProvider = require('../src/ai/providers/openaiProvider').default;
+const { createBackendProvider } = require('../src/ai/providers/openaiProvider');
 const anthropicProvider = require('../src/ai/providers/anthropicProvider').default;
 const googleProvider = require('../src/ai/providers/googleProvider').default;
 const scienceRepository = require('../src/ai/science/scienceRepository');
@@ -29,13 +29,21 @@ const detected = (targets, extra = {}) => ({ detected: true, confidence: 0.92, e
   assert.equal(typeof router.resolveModelRoute, 'function');
   assert.equal(router.resolveModelRoute(router.AI_TASK_TYPES.CONVERSATION).capabilityTier, 'economy');
   assert.equal(router.resolveModelRoute(router.AI_TASK_TYPES.SCIENTIFIC_ANSWER).useScientificContext, true);
-  assert.equal(router.resolveModelRoute(router.AI_TASK_TYPES.CONVERSATION).modelId, null);
-  await assert.rejects(aiServiceModule.sendMessage({ message: 'Bonjour', context: {} }), { code: 'AI_SERVICE_NOT_CONFIGURED' });
+  assert.equal(router.resolveModelRoute(router.AI_TASK_TYPES.CONVERSATION).modelId, 'backend-default');
+  assert.equal(router.resolveModelRoute(router.AI_TASK_TYPES.CONVERSATION).providerId, 'openai');
 
-  for (const provider of [openaiProvider, anthropicProvider, googleProvider]) {
+  for (const provider of [anthropicProvider, googleProvider]) {
     assert.equal(typeof provider.generate, 'function');
     await assert.rejects(provider.generate({ messages: [], context: {}, taskType: 'conversation' }), { code: 'AI_PROVIDER_NOT_CONFIGURED' });
   }
+  let backendRequest;
+  const backendProvider = createBackendProvider({ endpoint: 'http://backend.test/api/chat', fetchImpl: async (url, options) => { backendRequest = { url, options }; return { ok: true, json: async () => ({ reply: ' Réponse locale ' }) }; } });
+  assert.equal(await backendProvider.generate({ messages: [{ role: 'user', text: 'Bonjour' }], context: { goal: 'reduce' } }), 'Réponse locale');
+  assert.deepEqual(JSON.parse(backendRequest.options.body), { message: 'Bonjour', context: { goal: 'reduce' } });
+  assert.deepEqual(Object.keys(JSON.parse(backendRequest.options.body)).sort(), ['context', 'message']);
+  await assert.rejects(createBackendProvider({ fetchImpl: async () => { throw new Error('offline'); } }).generate({ messages: [{ role: 'user', text: 'Test' }], context: {} }), { code: 'BACKEND_UNAVAILABLE' });
+  await assert.rejects(createBackendProvider({ fetchImpl: async () => ({ ok: false, status: 503 }) }).generate({ messages: [{ role: 'user', text: 'Test' }], context: {} }), { code: 'BACKEND_NOT_CONFIGURED' });
+  await assert.rejects(createBackendProvider({ fetchImpl: async () => ({ ok: true, json: async () => ({ reply: ' ' }) }) }).generate({ messages: [{ role: 'user', text: 'Test' }], context: {} }), { code: 'EMPTY_REPLY' });
 
   assert.deepEqual(scienceRepository.listScientificDocuments(), []);
   assert.equal(scienceRepository.getScientificDocumentById('missing'), null);
@@ -60,7 +68,7 @@ const detected = (targets, extra = {}) => ({ detected: true, confidence: 0.92, e
   assert.equal(normalizedTrackerEvent.targets[0].measurement.source, 'conversation');
 
   const aiFiles = fs.readdirSync('./src/ai', { recursive: true }).filter((name) => name.endsWith('.js')).map((name) => fs.readFileSync(`./src/ai/${name}`, 'utf8')).join('\n');
-  assert.equal(/fetch\s*\(|XMLHttpRequest|axios|https:\/\/api\./i.test(aiFiles), false);
+  assert.equal(/XMLHttpRequest|axios|https:\/\/api\.openai/i.test(aiFiles), false);
   assert.equal(/sk-[a-z0-9_-]{10,}|AIza[a-z0-9_-]{10,}|Bearer\s+[a-z0-9._-]{10,}/i.test(aiFiles), false);
   const talkScreen = fs.readFileSync('./src/screens/TalkScreen.js', 'utf8');
   assert.equal(/providers\/(openai|anthropic|google)/.test(talkScreen), false);

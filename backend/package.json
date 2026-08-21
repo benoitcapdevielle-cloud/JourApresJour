@@ -1,0 +1,10 @@
+{
+  "name": "jour-apres-jour-backend",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "test": "node test/backend.test.js"
+  }
+}

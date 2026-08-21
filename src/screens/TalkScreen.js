@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { buildAIContext } from '../ai/buildAIContext';
-import { addUserMessage, clearConversation, loadConversation } from '../services/conversationService';
+import aiService from '../ai/aiService';
+import { addAssistantMessage, addUserMessage, clearConversation, loadConversation } from '../services/conversationService';
 import { GOAL_OPTIONS } from '../services/profileService';
 import { buildTalkPreview, hasEnoughBehaviorData } from '../utils/talkPreview';
 
@@ -49,10 +50,13 @@ export default function TalkScreen({ events, profile, memories, onManageMemory, 
       if (savedMessage) {
         setMessages((current) => [...current, savedMessage]);
         setMessage(''); setInputHeight(MIN_INPUT_HEIGHT);
-        setNotice('Le compagnon n’est pas encore connecté.');
+        setNotice('Le compagnon réfléchit…');
         scrollToLatest();
+        const reply = await aiService.sendMessage({ message: text, context });
+        const assistantMessage = await addAssistantMessage(reply);
+        if (assistantMessage) { setMessages((current) => [...current, assistantMessage]); setNotice(''); scrollToLatest(); }
       }
-    } catch { setNotice('Le message n’a pas pu être enregistré sur ce téléphone.'); }
+    } catch { setNotice('Le compagnon n’est pas disponible pour le moment.'); }
     finally { sendingRef.current = false; setIsSending(false); }
   };
 
@@ -82,7 +86,7 @@ export default function TalkScreen({ events, profile, memories, onManageMemory, 
       <Text style={styles.title}>Parler</Text>
       <View style={styles.headerAction}>{messages.length > 0 ? <Pressable onPress={confirmClear} hitSlop={8}><Text style={styles.clearText}>Effacer</Text></Pressable> : null}</View>
     </View>
-    <Text style={styles.privacyNotice}>Messages enregistrés localement · aucune donnée envoyée à une IA</Text>
+    <Text style={styles.privacyNotice}>Messages enregistrés localement · seuls le message envoyé et le contexte compact sont transmis</Text>
     <View style={styles.secondaryBar}>
       <Pressable style={styles.contextToggle} onPress={() => setContextOpen((current) => !current)} accessibilityState={{ expanded: contextOpen }}>
         <Text style={styles.contextToggleText}>Ce que Jour après Jour comprend de moi</Text>

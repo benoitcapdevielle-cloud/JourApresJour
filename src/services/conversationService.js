@@ -10,8 +10,8 @@ const cleanMessage = (message) => {
   const id = typeof message.id === 'string' ? message.id.trim() : '';
   const text = typeof message.text === 'string' ? message.text.trim() : '';
   const createdAt = typeof message.createdAt === 'string' ? message.createdAt : '';
-  if (!id || !text || message.role !== 'user' || !createdAt || Number.isNaN(Date.parse(createdAt))) return null;
-  return { id, role: 'user', text, createdAt };
+  if (!id || !text || !['user', 'assistant'].includes(message.role) || !createdAt || Number.isNaN(Date.parse(createdAt))) return null;
+  return { id, role: message.role, text, createdAt };
 };
 
 export function normalizeConversation(value) {
@@ -38,9 +38,9 @@ const enqueueWrite = (operation) => {
   return next;
 };
 
-const createMessage = (text) => ({
+const createMessage = (text, role) => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-  role: 'user',
+  role,
   text: text.trim(),
   createdAt: new Date().toISOString(),
 });
@@ -50,7 +50,18 @@ export function addUserMessage(text) {
   if (!cleanedText) return Promise.resolve(null);
   return enqueueWrite(async () => {
     const current = await loadConversation();
-    const message = createMessage(cleanedText);
+    const message = createMessage(cleanedText, 'user');
+    await saveConversation([...current, message]);
+    return message;
+  });
+}
+
+export function addAssistantMessage(text) {
+  const cleanedText = typeof text === 'string' ? text.trim() : '';
+  if (!cleanedText) return Promise.resolve(null);
+  return enqueueWrite(async () => {
+    const current = await loadConversation();
+    const message = createMessage(cleanedText, 'assistant');
     await saveConversation([...current, message]);
     return message;
   });
