@@ -5,8 +5,10 @@ import EntryFormScreen from './src/screens/EntryFormScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import TalkScreen from './src/screens/TalkScreen';
+import AnalysisScreen from './src/screens/AnalysisScreen';
 import { SCHEMA_VERSION } from './src/constants/trackingOptions';
 import { clearEvents, loadEvents, saveEvents } from './src/services/storageService';
+import { loadProfile, saveGoal } from './src/services/profileService';
 
 export default function App() {
   const [screen, setScreen] = useState('home');
@@ -15,9 +17,10 @@ export default function App() {
   const [eventType, setEventType] = useState('consumption');
   const [editingEvent, setEditingEvent] = useState(null);
   const [flashMessage, setFlashMessage] = useState('');
+  const [goal, setGoal] = useState(null);
 
   useEffect(() => {
-    loadEvents().then(setEvents).catch((error) => console.error('Erreur de chargement :', error)).finally(() => setIsLoaded(true));
+    Promise.all([loadEvents(), loadProfile()]).then(([savedEvents, profile]) => { setEvents(savedEvents); setGoal(profile.goal); }).catch((error) => console.error('Erreur de chargement :', error)).finally(() => setIsLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -70,10 +73,11 @@ export default function App() {
   ]);
 
   if (!isLoaded) return <View style={styles.loadingContainer}><Text>Chargement...</Text></View>;
+  if (screen === 'analysis') return <AnalysisScreen events={events} onBack={() => setScreen('home')} />;
   if (screen === 'talk') return <TalkScreen onBack={() => setScreen('home')} />;
   if (screen === 'history') return <HistoryScreen events={events} onBack={() => setScreen('home')} onEdit={(event) => openForm(event.eventType, event)} onDelete={deleteEvent} onDeleteAll={deleteAllEvents} />;
   if (screen === 'form') return <EntryFormScreen initialEventType={eventType} editingEvent={editingEvent} onBack={() => { setEditingEvent(null); setScreen('home'); }} onSave={handleSave} />;
-  return <HomeScreen events={events} flashMessage={flashMessage} onConsumption={() => openForm('consumption')} onCraving={() => openForm('craving_resisted')} onTalk={() => setScreen('talk')} onHistory={() => setScreen('history')} />;
+  return <HomeScreen events={events} goal={goal} onGoalChange={async (nextGoal) => { setGoal(nextGoal); await saveGoal(nextGoal); }} flashMessage={flashMessage} onConsumption={() => openForm('consumption')} onCraving={() => openForm('craving_resisted')} onTalk={() => setScreen('talk')} onHistory={() => setScreen('history')} onAnalysis={() => setScreen('analysis')} />;
 }
 
 const styles = StyleSheet.create({ loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9' } });
