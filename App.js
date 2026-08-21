@@ -42,7 +42,7 @@ export default function App() {
       schemaVersion: SCHEMA_VERSION,
       id: editingEvent?.id || Date.now().toString(),
       eventType: values.eventType,
-      date: editingEvent?.date || now,
+      date: values.date || editingEvent?.date || now,
       updatedAt: now,
       targets: values.selectedTargets,
       craving: Number(values.craving),

@@ -3,21 +3,22 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { StatusBar } from 'expo-status-bar';
 import { buildAIContext } from '../ai/buildAIContext';
 import { GOAL_OPTIONS } from '../services/profileService';
+import { buildTalkPreview } from '../utils/talkPreview';
 
 export default function TalkScreen({ events, profile, memories, onManageMemory, onBack }) {
   const [message, setMessage] = useState(''); const [notice, setNotice] = useState('');
   const context = useMemo(() => buildAIContext({ events, profile, memories }), [events, profile, memories]);
-  const goal = GOAL_OPTIONS.find(({ value }) => value === context.goal)?.label || 'Non défini'; const summary = context.behaviorSummary;
-  const send = () => { if (message.trim()) setNotice('Le compagnon IA n’est pas encore activé. Ton message n’a pas été envoyé et n’est pas enregistré.'); };
+  const goalLabel = GOAL_OPTIONS.find(({ value }) => value === context.goal)?.label;
+  const previewItems = useMemo(() => buildTalkPreview({ context, goalLabel }), [context, goalLabel]);
+  const send = () => { if (message.trim()) setNotice('Aucun message n’a été envoyé.'); };
   return <ScrollView style={styles.screen} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
     <Pressable onPress={onBack}><Text style={styles.back}>← Retour</Text></Pressable><Text style={styles.title}>Parler</Text>
-    <View style={styles.card}><Text style={styles.cardTitle}>Ton compagnon Jour après Jour</Text><Text style={styles.text}>Tu peux préparer un message ici. Pour l’instant, le compagnon IA n’est pas activé : rien n’est envoyé ni enregistré.</Text>
-      <TextInput style={styles.messageInput} multiline value={message} onChangeText={(value) => { setMessage(value); setNotice(''); }} placeholder="Écris ce que tu souhaites partager…" textAlignVertical="top" />
+    <View style={styles.card}><Text style={styles.cardTitle}>Qu’est-ce qui se passe ?</Text><Text style={styles.text}>Le compagnon Jour après Jour n’est pas encore connecté. Tes messages restent sur cet écran et ne sont envoyés à aucune IA.</Text>
+      <TextInput style={styles.messageInput} multiline value={message} onChangeText={(value) => { setMessage(value); setNotice(''); }} placeholder="Qu’est-ce qui se passe ?" textAlignVertical="top" />
       <Pressable style={[styles.sendButton, !message.trim() && styles.disabled]} onPress={send} disabled={!message.trim()}><Text style={styles.sendText}>Envoyer</Text></Pressable>{!!notice && <Text style={styles.notice}>{notice}</Text>}
     </View>
-    <View style={styles.card}><Text style={styles.cardTitle}>Ce que Jour après Jour pourra utiliser avec ton accord</Text>
-      <Text style={styles.preview}>Ton objectif : {goal}</Text>{summary.topTrigger && <Text style={styles.preview}>Déclencheur fréquent : {summary.topTrigger.value}</Text>}{summary.topResistedStrategy && <Text style={styles.preview}>Stratégie souvent utilisée : {summary.topResistedStrategy.value}</Text>}
-      <Text style={styles.preview}>{context.personalContext.motivations.length} motivation{context.personalContext.motivations.length > 1 ? 's' : ''} personnelle{context.personalContext.motivations.length > 1 ? 's' : ''} enregistrée{context.personalContext.motivations.length > 1 ? 's' : ''}</Text>
+    <View style={styles.card}><Text style={styles.cardTitle}>Ce que Jour après Jour peut déjà comprendre</Text>
+      {previewItems.length ? previewItems.map((item) => <Text key={item} style={styles.preview}>{item}</Text>) : <Text style={styles.text}>Aucune tendance disponible pour le moment.</Text>}
       <Text style={styles.privacy}>Cet aperçu reste local et ne montre ni tes notes complètes ni tout ton historique.</Text><Pressable style={styles.memoryButton} onPress={onManageMemory}><Text style={styles.memoryText}>Gérer ce que Jour après Jour retient</Text></Pressable>
     </View><StatusBar style="auto" />
   </ScrollView>;
