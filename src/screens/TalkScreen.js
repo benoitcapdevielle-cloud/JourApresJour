@@ -10,7 +10,7 @@ import { GOAL_OPTIONS } from '../services/profileService';
 import { buildTalkPreview, hasEnoughBehaviorData } from '../utils/talkPreview';
 import { alignConversationEventToDeviceTime, getAutoSaveDecision, isApplicableEventEnrichment, isConfirmableEventSuggestion, mergePendingConversationEvent } from '../ai/eventExtraction';
 import { formatTargetMeasurements } from '../utils/targetUtils';
-import { buildLocalSafetyDetectedEvent, buildLocalSafetyReply, isCriticalSafety, resolveEffectiveSafety } from '../utils/safetyUtils';
+import { buildLocalSafetyDetectedEvent, buildLocalSafetyReply, isCriticalSafety, rememberLocalSafetyQuestion, resolveEffectiveSafety } from '../utils/safetyUtils';
 
 const MIN_INPUT_HEIGHT = 44;
 const MAX_INPUT_HEIGHT = 112;
@@ -95,11 +95,12 @@ export default function TalkScreen({ events, trackerDebug, onTrackerDebug, profi
           const savedPreflightSafety = await saveActiveSafetyContext(preflightSafetyContext);
           setActiveSafetyContext(savedPreflightSafety);
         }
-        const result = await aiService.sendMessage({ message: text, context, messages: messages.slice(-7), pendingConversationEvent: pendingSuggestion, activeRecentEvent: compactActiveEvent(activeRecentEvent), recentEventCandidates: recentEventCandidates.map(compactActiveEvent), activeSafetyContext: preflightSafetyContext });
+        const result = await aiService.sendMessage({ message: text, context, messages: messages.slice(-7), pendingConversationEvent: pendingSuggestion, activeRecentEvent: compactActiveEvent(activeRecentEvent), recentEventCandidates: recentEventCandidates.map(compactActiveEvent), activeSafetyContext: activeSafetyContext || preflightSafetyContext });
         const effectiveSafetyContext = resolveEffectiveSafety({ message: text, previous: preflightSafetyContext, backend: result?.safety, now: new Date() });
-        const nextSafetyContext = await saveActiveSafetyContext(effectiveSafetyContext);
-        setActiveSafetyContext(nextSafetyContext);
+        let nextSafetyContext = await saveActiveSafetyContext(effectiveSafetyContext);
         const reply = buildLocalSafetyReply(text, nextSafetyContext) || (typeof result === 'string' ? result : result?.reply);
+        if (isCriticalSafety(nextSafetyContext)) nextSafetyContext = await saveActiveSafetyContext(rememberLocalSafetyQuestion(nextSafetyContext, reply));
+        setActiveSafetyContext(nextSafetyContext);
         const assistantMessage = await addAssistantMessage(reply);
         const shouldFollowAssistant = isNearBottomRef.current;
         if (assistantMessage) { setMessages((current) => [...current, assistantMessage]); setNotice(''); if (shouldFollowAssistant) requestAutoScroll(); }

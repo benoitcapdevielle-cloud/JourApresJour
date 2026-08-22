@@ -19,6 +19,8 @@ export function normalizeSafetyContext(value) {
     relatedConversationEventId: typeof value.relatedConversationEventId === 'string' && value.relatedConversationEventId.trim() ? value.relatedConversationEventId.trim() : null,
     reason: typeof value.reason === 'string' && value.reason.trim() ? value.reason.trim() : null,
     quantity: Number.isFinite(Number(value.quantity)) ? Number(value.quantity) : null,
+    lastAssistantQuestion: typeof value.lastAssistantQuestion === 'string' && value.lastAssistantQuestion.trim() ? value.lastAssistantQuestion.trim() : null,
+    followUpAttempt: Number.isInteger(value.followUpAttempt) && value.followUpAttempt >= 0 ? value.followUpAttempt : 0,
     startedAt: typeof value.startedAt === 'string' && !Number.isNaN(Date.parse(value.startedAt)) ? new Date(value.startedAt).toISOString() : null,
   };
 }

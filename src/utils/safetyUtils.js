@@ -13,6 +13,25 @@ const findExitReason = (message) => {
   return null;
 };
 
+const getBinaryAnswer = (message) => /^(?:oui|ouais|yes|non|non merci)[.!\s]*$/i.test(cleanText(message))
+  ? (/^(?:oui|ouais|yes)\b/i.test(cleanText(message)) ? 'yes' : 'no') : null;
+
+const findContextualExitReason = (message, previous) => {
+  const answer = getBinaryAnswer(message);
+  const question = previous?.lastAssistantQuestion || '';
+  if (answer === 'yes' && /appel[ée]|lancer l['’]appel/i.test(question)) return 'emergency_services_contacted';
+  if (answer === 'no' && /seul/i.test(question)) return 'trusted_person_present';
+  return null;
+};
+
+const hasTemporalResolution = (message) => {
+  const text = cleanText(message).toLocaleLowerCase('fr-FR');
+  return /\b(?:c['’]était|cela (?:s['’]est passé|était)|ça (?:s['’]est passé|date))\s+(?:hier|avant-hier|la semaine dernière)\b/i.test(text)
+    || /\b(?:c['’]est|cela est|ça y est,? c['’]est)\s+(?:fini|terminé|passé)|\b(?:ce n['’]est|c['’]est) plus (?:le cas|maintenant|d['’]actualité)|\bplus maintenant\b/i.test(text);
+};
+
+const hasCurrentDanger = (message) => /\b(?:maintenant|en ce moment).*(?:surdose|overdose|convulsion|respirer|douleur|partir)|\b(?:surdose|overdose|convulsions?|perte de connaissance|n['’]arrive plus à respirer|douleur (?:dans la poitrine|thoracique)|me sens partir)\b/i.test(cleanText(message));
+
 export const isCriticalSafety = (value) => Boolean(value?.active && CRITICAL_LEVELS.includes(value.level));
 
 export function evaluateCurrentSafety(message, now = new Date()) {
@@ -23,9 +42,10 @@ export function evaluateCurrentSafety(message, now = new Date()) {
 
 export function resolveEffectiveSafety({ message, previous = null, backend = null, now = new Date() } = {}) {
   const current = evaluateCurrentSafety(message, now);
-  const exitReason = findExitReason(message);
   const previousCritical = isCriticalSafety(previous);
   const backendCritical = isCriticalSafety(backend);
+  const temporalExit = previousCritical && hasTemporalResolution(message) && !hasCurrentDanger(message) ? 'incident_no_longer_current' : null;
+  const exitReason = findExitReason(message) || findContextualExitReason(message, previous) || temporalExit;
   if (previousCritical && exitReason) return {
     ...previous, level: 'concern', currentLevel: current.level, effectiveLevel: 'concern', active: false, mustFollowUp: false,
     resolved: true, exitReason, relatedConversationEventId: previous.relatedConversationEventId || null,
@@ -50,12 +70,18 @@ export function resolveEffectiveSafety({ message, previous = null, backend = nul
 
 export function buildLocalSafetyReply(message, safety) {
   const text = cleanText(message).toLocaleLowerCase('fr-FR');
+  if (safety?.exitReason === 'incident_no_longer_current') return 'D’accord, je comprends que cet épisode est terminé et qu’il n’y a pas de danger actuel exprimé. Si un symptôme inquiétant apparaît ou revient, contacte immédiatement les urgences.';
   if (!isCriticalSafety(safety)) return null;
   if (findHighDoseMdma(message) !== null) return `${findHighDoseMdma(message)} taz, c’est une quantité qui peut représenter une urgence médicale. Appelle le 15 ou le 112 maintenant. Tu es seul ?`;
-  if (/^(?:et|et\s*\?|oui|non)$/i.test(text)) return `Je reste sur ce que tu viens de me dire : ${safety.quantity || 14} taz peut représenter une urgence. Appelle le 15 ou le 112 maintenant. Tu es seul ?`;
-  if (/\b(?:je vais bien|je me sens bien|ça va)\b/i.test(text)) return 'Même si tu te sens bien maintenant, le risque peut rester sérieux. Appelle le 15 ou le 112 tout de suite. Tu es seul ?';
+  const answer = getBinaryAnswer(text);
+  if (answer === 'yes' && /seul/i.test(safety.lastAssistantQuestion || '')) return 'D’accord, tu es seul. Appelle le 15 ou le 112 maintenant et préviens un proche si tu peux. Peux-tu lancer l’appel tout de suite ?';
+  if (answer === 'no' && /appel[ée]|lancer l['’]appel/i.test(safety.lastAssistantQuestion || '')) return 'D’accord, tu n’as pas lancé l’appel. Demande immédiatement à quelqu’un de le faire pour toi. Quelqu’un peut-il venir près de toi maintenant ?';
+  if (/^(?:et|et\s*\?)$/i.test(text)) return `Je reste sur ce que tu viens de me dire : ${safety.quantity || 14} taz peut représenter une urgence. Appelle le 15 ou le 112 maintenant. Quelqu’un est-il avec toi ?`;
+  if (/\b(?:je vais bien|je me sens bien|ça va)\b/i.test(text)) return 'J’entends que tu te sens bien maintenant, mais le risque peut rester sérieux. Appelle le 15 ou le 112 tout de suite. Quelqu’un est avec toi ?';
   if (/\bje suis seul\b/i.test(text)) return 'Appelle le 15 ou le 112 maintenant et préviens quelqu’un de proche si tu peux. Peux-tu lancer l’appel tout de suite ?';
-  return 'Je reste sur l’urgence dont tu viens de parler. Appelle le 15 ou le 112 maintenant et ne reste pas seul si tu peux l’éviter. Tu as appelé ?';
+  if (/quelqu['’]un|avec toi|près de toi/i.test(safety.lastAssistantQuestion || '') && safety.followUpAttempt >= 2) return 'Je comprends que l’aide n’est pas encore confirmée. Envoie maintenant un message à un proche avec ton adresse et demande-lui d’appeler le 15 ou le 112, puis dis-moi simplement quand c’est fait.';
+  if (/appel[ée]|lancer l['’]appel/i.test(safety.lastAssistantQuestion || '')) return 'Je comprends que l’appel n’est pas encore confirmé. Demande à quelqu’un près de toi d’appeler le 15 ou le 112. Qui peux-tu prévenir maintenant ?';
+  return 'Je reste sur l’urgence dont tu viens de parler. Appelle le 15 ou le 112 maintenant et ne reste pas seul si tu peux l’éviter. As-tu pu lancer l’appel ?';
 }
 
 export function buildLocalSafetyDetectedEvent(message, now = new Date()) {
@@ -67,4 +93,10 @@ export function buildLocalSafetyDetectedEvent(message, now = new Date()) {
     craving: null, emotion: null, context: null, triggers: [], strategies: [], occurredAt: now.toISOString(), occurredAtPrecision: 'exact',
     missingFields: [], ambiguity: [], trackingStatus: 'unconfirmed', safetyRelevant: true, trackerEventId: null, source: 'conversation_pending',
   };
+}
+
+export function rememberLocalSafetyQuestion(safety, reply) {
+  const questions = cleanText(reply).match(/[^.!?]*\?/g);
+  const lastAssistantQuestion = questions?.at(-1)?.trim() || null;
+  return { ...safety, lastAssistantQuestion, followUpAttempt: (safety?.followUpAttempt || 0) + (lastAssistantQuestion ? 1 : 0) };
 }

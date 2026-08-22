@@ -1,6 +1,6 @@
 const { createOpenAIProvider } = require('./providers/openaiProvider');
 const { getEmergencyResources } = require('../safety/emergencyResources');
-const { buildSafetyDetectedEvent, enforceSafetyReply, evaluateSafety, normalizeSafetyContext } = require('../safety/safetyService');
+const { buildSafetyDetectedEvent, enforceSafetyReply, evaluateSafety, normalizeSafetyContext, rememberAssistantQuestion } = require('../safety/safetyService');
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const cleanRecentMessages = (value) => Array.isArray(value) ? value.slice(-8).map((item) => ({
@@ -29,13 +29,15 @@ function createBackendAiService({ provider = createOpenAIProvider(), countryCode
       try { result = await provider.generate({ message: cleanMessage, context, recentMessages: cleanedMessages, pendingConversationEvent, activeRecentEvent, recentEventCandidates: candidates, activeSafetyContext: safety }); }
       catch (error) {
         if (!safety.mustFollowUp) throw error;
-        return { reply: enforceSafetyReply({ reply: '', safety, message: cleanMessage, resources: emergencyResources }), eventSuggestion: null, eventEnrichment: null, detectedConversationEvent: safetyDetectedEvent, safety };
+        const reply = enforceSafetyReply({ reply: '', safety, message: cleanMessage, resources: emergencyResources });
+        return { reply, eventSuggestion: null, eventEnrichment: null, detectedConversationEvent: safetyDetectedEvent, safety: rememberAssistantQuestion(safety, reply) };
       }
       const reply = typeof result === 'string' ? result : result?.reply;
       if (typeof reply !== 'string' || !reply.trim()) { const error = new Error('EMPTY_REPLY'); error.code = 'EMPTY_REPLY'; error.statusCode = 502; throw error; }
       const providerSuggestion = result && typeof result === 'object' ? result.eventSuggestion || null : null;
       const critical = safety.active && (safety.level === 'urgent' || safety.level === 'emergency');
-      return { reply: enforceSafetyReply({ reply, safety, message: cleanMessage, resources: emergencyResources }), eventSuggestion: critical ? null : providerSuggestion, eventEnrichment: critical ? null : result && typeof result === 'object' ? result.eventEnrichment || null : null, detectedConversationEvent: providerSuggestion || safetyDetectedEvent, safety };
+      const enforcedReply = enforceSafetyReply({ reply, safety, message: cleanMessage, resources: emergencyResources });
+      return { reply: enforcedReply, eventSuggestion: critical ? null : providerSuggestion, eventEnrichment: critical ? null : result && typeof result === 'object' ? result.eventEnrichment || null : null, detectedConversationEvent: providerSuggestion || safetyDetectedEvent, safety: rememberAssistantQuestion(safety, enforcedReply) };
     },
   });
 }
